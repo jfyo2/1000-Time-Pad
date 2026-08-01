@@ -8,6 +8,7 @@ Features:
 - Changeable text size (zoom in/out)
 - Smart find and replace
 - Open recent files menu
+
 TBD:
 - Smart undo/redo algorithm
 - Word wrap
