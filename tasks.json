@@ -27,7 +27,7 @@
             "-lole32",
             "-luuid",
             "-lcomctl32",
-            //"-mwindows"
+            "-mwindows"
         ],
         "options": {
             "shell": {

@@ -1,3 +1,5 @@
+// (c) jfyo2 2026
+
 #include <fstream>  
 #include <iostream> 
 #include <vector>
@@ -79,7 +81,7 @@ std::vector<std::string> redo_history;
 // }
 
 
-/* --- Initialise all handler functions --- */
+/* --- Declare all handler functions --- */
 void text_changed(int pos, int nInserted, int nDeleted, int nRestyled, const char* deletedText, void* editorWindow);
 void blink_cursor(void* data);
 
@@ -123,8 +125,6 @@ void cb_128(Fl_Widget* w, void* data);
 void cb_192(Fl_Widget* w, void* data);
 void cb_256(Fl_Widget* w, void* data);
 
-
-
 void show_findandreplace(Fl_Widget* w, void* data);  
 void find_previous_cb(Fl_Widget* w, void* data);
 void find_next_cb(Fl_Widget* w, void* data); 
@@ -137,6 +137,9 @@ int count_total_occurrences(void* data);
 
 void update_count(void* data);
 void currently_typing_updater(void* data);
+
+void toggle_wordwrap_cb(Fl_Widget* w, void* data);
+void toggle_linenumbers_cb(Fl_Widget* w, void* data);
 
 /* --- Editor Class --- */
 
@@ -228,7 +231,9 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
 
         { "View", 0, 0, 0, FL_SUBMENU },
             {"Zoom In", FL_CTRL + FL_SHIFT + '+', [](Fl_Widget* w, void* v) { zoom_in(v); }, 0, 0 },
-            {"Zoom Out", FL_CTRL + FL_SHIFT + '-', [](Fl_Widget* w, void* v) { zoom_out(v); }, 0, 0 },
+            {"Zoom Out", FL_CTRL + FL_SHIFT + '-', [](Fl_Widget* w, void* v) { zoom_out(v); }, 0, FL_MENU_DIVIDER },
+            { "Word Wrap", 0, toggle_wordwrap_cb, 0, FL_MENU_TOGGLE },
+            { "Line Numbers", 0, toggle_linenumbers_cb, 0, FL_MENU_TOGGLE },
             { 0 },
         { "Encryption", 0, 0, 0, FL_SUBMENU }, 
             {"Encrypt Text", 0, show_encrypt_window, 0, 0 },
@@ -550,6 +555,10 @@ void open_file(char* newfile, int ipos) {
     // add to recents, remove anything after 10th 
     add_recent_files(filename);
 
+    // reset undo/redo history
+    undo_history.clear();
+    redo_history.clear();
+
     // reset loading flag 
     loading = 0;
     textbuf->call_modify_callbacks();
@@ -655,6 +664,8 @@ void open_recent_file_cb(Fl_Widget* w, void* data) {
         add_recent_files(entry->filepath);
         entry->win->label(entry->filepath.c_str());
         strcpy(filename, entry->filepath.c_str());
+        undo_history.clear();
+        redo_history.clear();
         save_recents_list();
         redraw_recents_menu(w, entry->win);
     }
@@ -1184,6 +1195,36 @@ void replace_cancel_cb(Fl_Widget* w, void* data) {
     if (!win || !textbuf) return;
 
     win->replace_dlg->hide();
+}
+
+/* --- For toggling word wrapping and line numbering --- */
+void toggle_wordwrap_cb(Fl_Widget* w, void* data) {
+    EditorWindow* win = get_window(w, data);
+    if (!win || !win->editor) return;
+
+    // figure out if toggle is on or not 
+    const int wordwrap_status = win->menu->mvalue()->value();
+
+    if (wordwrap_status) {
+        win->editor->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
+    } else {
+        win->editor->wrap_mode(Fl_Text_Display::WRAP_NONE, 0);
+    }
+    win->editor->redraw();
+}
+
+void toggle_linenumbers_cb(Fl_Widget* w, void* data) {
+    EditorWindow* win = get_window(w, data);
+    if (!win || !win->editor) return;
+
+    // same as above function 
+    const int linenumbers_status = win->menu->mvalue()->value();
+    if (linenumbers_status) {
+        win->editor->linenumber_width(45);
+    } else {
+        win->editor->linenumber_width(0);
+    }
+    win->editor->redraw();
 }
 
 

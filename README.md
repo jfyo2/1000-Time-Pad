@@ -8,10 +8,10 @@ Features:
 - Changeable text size (zoom in/out)
 - Smart find and replace
 - Open recent files menu
+- Toggleable word wrapping and line numbering 
 
-TBD:
+To be added:
 - Smart undo/redo algorithm
-- Word wrap
 - Modern UI 
 
 # About the encryption method
@@ -21,7 +21,7 @@ The user enters a password in plaintext, which is converted into an AES hex key 
 # Building 
 This project is a C++17 FLTK application built with MinGW-w64 (g++) and FLTK installed via vcpkg. 
 
-Prerequisites
+Prerequisites:
 - MinGW-w64 (providing g++, gdb) — e.g. installed at C:\mingw64
 - vcpkg, with FLTK installed for the x64-mingw-dynamic triplet:
 ```vcpkg install fltk:x64-mingw-dynamic```
