@@ -36,6 +36,7 @@ g++ -g -std=c++17 `
   -lfltk -lgdi32 -lcomdlg32 -lole32 -luuid -lcomctl32
 ```
 **Building with VS Code**
+
 This project can also be built straight from VS Code using the included tasks.json file. Steps:
 - Open the project folder in VS Code.
 - Open the Run and Debug panel (Ctrl+Shift+D).
