@@ -32,13 +32,15 @@ char filename[256] = "Nameless File";
 
 std::vector<std::string> recent_files;
 const size_t MAX_RECENT_FILES = 10;
-std::string recent_dat_file_path = "recents.dat"; // fallback default 
+std::string recent_dat_file_path = "recents.dat"; // fallback default, code will attempt to update to true working directory
 
 Fl_Text_Buffer *textbuf;
 int sel_start, sel_end; // tracks selection in find/replace dialogue 
 bool edited_since_find = false; // tracks whether text edited since last find 
 bool cursor_visible = true; // used for blinking cursor 
-bool currently_typing = false; 
+bool currently_typing = false; // used for blinking cursor 
+bool now_editing = false; // similar to currently_typing but used for tracking edits instead, behaves slightly differently
+bool is_bulk_action = false; // overrides edit tracking during a sequence of actions, used in find and replace 
 
 char encrypt_mode[8];
 int keysize = 128; // key size in bits for encryption/decryption
@@ -47,6 +49,7 @@ const int MIN_FONT_SIZE = 4;
 const int MAX_FONT_SIZE = 256;
 
 // track undo/redo history 
+bool is_delimiter(char c);
 std::vector<std::string> undo_history;
 std::vector<std::string> redo_history;
 
@@ -176,6 +179,7 @@ class EditorWindow : public Fl_Double_Window {
         bool is_undo_redo_action; // flag to prevent infinite callback loops 
         
         // we want to enable zooming in/out by CTRL + mouse scrollwheel
+        // as well as capturing cursor movements/clicks inside the editor for smart undo/redo 
         // to do this we need to override the handle 
         int handle(int event) override {
             if (event == FL_MOUSEWHEEL && (Fl::event_state() & FL_CTRL)) {
@@ -187,6 +191,21 @@ class EditorWindow : public Fl_Double_Window {
                     zoom_out(this);
                 return 1;
             }
+            // mouse click ends edit block 
+            else if (event == FL_PUSH) {
+                now_editing = false;
+            }
+            // moving the cursor around with arrow keys ends edit block 
+            else if (event == FL_KEYBOARD) {
+                int k = Fl::event_key();
+                if (k == FL_Left  || k == FL_Right || 
+                    k == FL_Up    || k == FL_Down  || 
+                    k == FL_Home  || k == FL_End   || 
+                    k == FL_Page_Up || k == FL_Page_Down) {
+                    now_editing = false;
+                }
+            }
+
             return Fl_Double_Window::handle(event);
         }
     
@@ -245,32 +264,6 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
     menu = new Fl_Menu_Bar(0, 0, w, 30);
     menu->user_data(this); 
     menu->copy(menuitems, this);
-
-    // // add recent files for opening
-    // if (recent_files.empty()) {
-    //     menu->add("No recent files", 0, nullptr, nullptr, FL_MENU_INACTIVE); 
-    // } else {
-    //     for (const std::string &file : recent_files) {
-    //         // remove path from filename (e.g. C:/users/bob/bob.txt becomes bob.txt)
-    //         std::string filename_nopath = std::filesystem::path(file).filename().string();
-    //         std::string menu_path = "File/Open Recent/" + filename_nopath;
-
-    //         menu->add(
-    //             menu_path.c_str(), 0, 
-    //             [](Fl_Widget* w, void* v) {
-    //                 char* target_file = static_cast<char*>(v);
-    //                 if (target_file) {
-    //                     open_file(target_file, -1);
-    //                 }
-    //             }, 
-    //             (void*)file.c_str(),
-    //             0
-    //         );
-    //     }
-    // }
-    // add clear recents button 
-    // menu->add("File/Open Recent/Clear Recents", 0, clear_recents_menu, (void*)this, 0);
-    // menu->redraw();
 
     redraw_recents_menu(nullptr, this);
 
@@ -334,27 +327,12 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
     resizable(editor);
 } 
 
-// class File {
-//     public: 
-//         std::string name; // file name without a path
-//         std::string path; // full file path 
-
-//         File(std::string path_to_file) {
-//             this->name = std::filesystem::path(path_to_file).filename().string();
-//             this->path = path_to_file;
-//         }
-
-//         ~File();
-// };
 
 
 int main(int argc, char **argv) {
     // needed for full unicode support on win
     #ifdef _WIN32
     #define WIN32_LEAN_AND_MEAN
-    #endif
-
-    #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
     #endif
@@ -387,7 +365,25 @@ static EditorWindow* get_window(Fl_Widget* w, void* data) {
     return nullptr;
 }
 
+// Helper function to check for sentence/word delimiters
+// This will be important for smart undo, as these will mark the end of an undo/redo block
+bool is_delimiter(char c) {
+    return c == ' '  || c == '\n' || c == '\t' || c == '.' || 
+           c == ','  || c == '!'  || c == '?'  || c == ';' || 
+           c == ':'  || c == '"'  || c == '/'  || c == '(' || c == ')';
+}
+
+// Timeout callback triggered after 2.0s of inactivity
+// also used in smart undo/redo 
+void typing_timeout_cb(void* data) {
+    EditorWindow* window = static_cast<EditorWindow*>(data);
+    if (window) {
+        now_editing = false;
+    }
+}
+
 // check if text was changed 
+// we implement a smart undo/redo algorithm. 
 void text_changed(int pos, int nInserted, int nDeleted, int nRestyled, const char* deletedText, void* editorWindow) {
     EditorWindow* window = static_cast<EditorWindow*>(editorWindow);
     // guard clause to check not nullptr 
@@ -403,16 +399,13 @@ void text_changed(int pos, int nInserted, int nDeleted, int nRestyled, const cha
 
     changed = 1; // track changes in general
     edited_since_find = true; // track changes since last use of ctrl-f
-    // make sure we perma show the cursor whilst typing is taking place 
+    // make sure we permanently show the cursor whilst typing is taking place 
     // (changes to blinking after a period of inactivity by currently_typing_updater())
     currently_typing = true;
     window->editor->show_cursor(true);
 
     update_count(window);
 
-    // char newlabel[260];
-    // std::strcpy(newlabel, filename);
-    // std::strcpy(newlabel, "* - Thousand Time Pad");
     std::string editedsuffix = "* - Thousand Time Pad";
     std::string title = filename + editedsuffix;
     if (window) window->label(title.c_str());
@@ -421,20 +414,69 @@ void text_changed(int pos, int nInserted, int nDeleted, int nRestyled, const cha
     std::string current_text(raw_text ? raw_text : "");
     if (raw_text) free(raw_text);
 
-    // next we limit the stack size to prevent unbounded memory usage 
+
+    // --- Smart undo logic --- //
+    /* If one of the following actions is performed: 
+        - last key pressed was one of space, fullstop, comma, enter, tab, !, ", /, (, ) 
+        - click elsewhere or move cursor with arrow keys 
+        - pause of more than 2s with no typing 
+        - pasting, cutting -- triggered by checking if nInserted > 1
+        - pressing backspace or delete -- triggered by checking if nDeleted > 0 
+    then now_editing is set to false.
+    If an edit is made which does not entail one of these, then now_editing is set to true. 
+    Note: click/cursor movement is handled by the EditorWindow handle override, so won't appear here. 
+    A delimiter will create a new block AFTER the delimiter is typed, so we check for these after updating the undo_history stack, whereas pasting, cutting, and deleting immediately get given their own block, so for those we check before. 
+
+    If now_editing is true, the new edit replaces the previous one on the undo_history stack.
+    If now_editing is false, the new edit is added on top of the undo_history stack.
+    
+    Idea: now_editing tracks whether we are currently part of an edit 'block' (if true) or whether a new one should be started (if false). 
+
+    Also, undo_edit and redo_edit also set now_editing to false so that they update the stack. 
+
+    We will skip the whole thing if is_bulk_action is true. This means that actions that perform multiple insertions/deletions (i.e. find and replace) can be given their own logic for pushing to the history. 
+    */
+
+    // We limit the stack size to prevent unbounded memory usage 
     if (undo_history.size() >= 50) {
         undo_history.erase(undo_history.begin());
     }
 
-    // record state to undo history if it differs from the current top 
-    if (undo_history.empty() || undo_history.back() != current_text) {
-        undo_history.push_back(current_text);
-        // clear redo history because a new edit removes the redo path
-        redo_history.clear();
+    if (is_bulk_action) return;
 
-        // FOR DEBUGGING 
-        //print_undo_redo(undo_history, redo_history);
+    // Previous non-smart undo method 
+    // if (undo_history.empty() || undo_history.back() != current_text) {
+    //     undo_history.push_back(current_text);
+    //     // clear redo history because a new edit removes the redo path
+    //     redo_history.clear();
+    // }
+
+    // step 1: check for cutting, pasting, backspace, deletion, and mark now_editing as false 
+    if (nInserted > 1 || nDeleted > 0) {
+        now_editing = false;
     }
+    
+    // Step 2: If now_editing is true, new edit replaces current undo_history top 
+    if (now_editing && !undo_history.empty()) {
+        undo_history.back() = current_text;
+    } // if not, then we add a new one 
+    else {
+        undo_history.push_back(current_text);
+        redo_history.clear();
+        now_editing = true;
+    } 
+
+    // Step 3: If a delimiter is typed, set now_editing to false 
+    if (nInserted == 1) {
+        char inserted_char = textbuf->char_at(pos);
+        if (is_delimiter(inserted_char))
+            now_editing = false;
+    }
+
+    // Step 4: Create a new block if 2s pass with no edits 
+    Fl::remove_timeout(typing_timeout_cb, window);
+    Fl::add_timeout(2.0, typing_timeout_cb, window);
+
 }
 
 // make currently_typing false every 1s (it gets set to true whenever an edit is made) 
@@ -486,6 +528,10 @@ void new_file(Fl_Widget* widget, void* editorWindow) {
 
     // set text to contain nothing
     textbuf->text("");
+
+    // clear the history
+    undo_history.clear();
+    redo_history.clear();
 
     // reset file tracking variables
     filename[0] = '\0';
@@ -798,6 +844,10 @@ void undo_edit(Fl_Widget* w, void* data) {
     // do nothing if there are no edits 
     if (!window || undo_history.size() <= 1) return;
 
+    // Reset smart undo state
+    now_editing = false;
+    Fl::remove_timeout(typing_timeout_cb, window);
+
     // prevent text_changed from recording the undo edit as a new thing in the history 
     window->is_undo_redo_action = true;
 
@@ -832,6 +882,10 @@ void undo_edit(Fl_Widget* w, void* data) {
 void redo_edit(Fl_Widget* w, void* data) {
     EditorWindow* window = get_window(w, data);
     if (!window || redo_history.empty()) return;
+
+    // Reset smart undo state
+    now_editing = false;
+    Fl::remove_timeout(typing_timeout_cb, window);
 
     // rest of the code will be basically the same as undo_edit
     window->is_undo_redo_action = true;
@@ -1065,10 +1119,25 @@ void replace_selection_cb(Fl_Widget* w, void* data) {
     }
 
     if (has_selection) {
+        // we also want to mark this as a bulk action so that we override the action-by-action history tracking, as it technically does two things: 
+        // deletes selection then inserts new text, and we want this saved as one action rather than two 
+        is_bulk_action = true;
+
         textbuf->remove_selection();
         textbuf->insert(sel_start, replace);
         win->editor->insert_position(sel_start+strlen(replace));
         win->editor->show_insert_position();
+
+        is_bulk_action = false;
+
+        // update undo_history ONCE 
+        now_editing = false; // end any prior typing session
+        char* raw_text = textbuf->text();
+        std::string current_text(raw_text ? raw_text : "");
+        if (raw_text) free(raw_text);
+        undo_history.push_back(current_text);
+        redo_history.clear(); // Clear redo history for new edit branch
+        
     }
     else return;
 }
@@ -1088,6 +1157,9 @@ void replace_all_cb(Fl_Widget* w, void* data) {
     int replace_count = 0;
     win->editor->insert_position(0);
     
+    // mark as bulk action so that we override the action-by-action history tracking
+    is_bulk_action = true;
+
     for (;;) {
         int pos = win->editor->insert_position();
         int found = textbuf->search_forward(pos, find, &pos);
@@ -1099,6 +1171,21 @@ void replace_all_cb(Fl_Widget* w, void* data) {
         textbuf->insert(pos, replace);
         win->editor->insert_position(pos + strlen(replace));
         replace_count++;
+    }
+
+    // reset is_bulk_action when finished
+    is_bulk_action = false;
+
+    // if any replacements were made, commit ONCE to undo_history
+    if (replace_count > 0) {
+        now_editing = false; // end any prior typing session
+
+        char* raw_text = textbuf->text();
+        std::string current_text(raw_text ? raw_text : "");
+        if (raw_text) free(raw_text);
+
+        undo_history.push_back(current_text);
+        redo_history.clear(); // Clear redo history for new edit branch
     }
 
     if (replace_count > 0) fl_message("Replaced %d occurrence(s) of '%s' with '%s'.", replace_count, find, replace);

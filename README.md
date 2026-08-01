@@ -5,13 +5,13 @@ Features:
 - Encryption/decryption of text using AES-CBC supporting 128 bit, 192 bit, and 256 bit keys
 - Salting and hashing of plaintext passwords using PBKDF2
 - Supports all major keyboard shortcuts
+- Custom smart undo/redo algorithm which reverses actions in blocks that are naturally related 
 - Changeable text size (zoom in/out)
-- Smart find and replace
+- Find and replace
 - Open recent files menu
 - Toggleable word wrapping and line numbering 
 
 To be added:
-- Smart undo/redo algorithm
 - Modern UI 
 
 # About the encryption method
