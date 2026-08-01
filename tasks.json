@@ -1,0 +1,45 @@
+{
+    "version": "2.0.0",
+    "presentation": {
+        "reveal": "always",
+        "panel": "new"
+    },
+    "tasks": [
+        {
+        "type": "shell",
+        "label": "Build FLTK App",
+        "command": "C:\\mingw64\\bin\\g++.exe",
+        "args": [
+            "-g",
+            "-std=c++17",
+            "${fileDirname}\\1000timepad.cpp",
+            "${fileDirname}\\AES.cpp",
+            "${fileDirname}\\PBKDF2.cpp",
+            "-o",
+            "${fileDirname}\\${fileBasenameNoExtension}.exe",
+            "-I",
+            "C:/vcpkg/installed/x64-mingw-dynamic/include",
+            "-L",
+            "C:/vcpkg/installed/x64-mingw-dynamic/lib",
+            "-lfltk",
+            "-lgdi32",
+            "-lcomdlg32",
+            "-lole32",
+            "-luuid",
+            "-lcomctl32",
+            "-mwindows"
+        ],
+        "options": {
+            "shell": {
+                "executable": "powershell.exe",
+                "args": ["-NoProfile", "-Command"]
+            }
+        },
+        "group": {
+            "kind": "build",
+            "isDefault": true
+        },
+        "problemMatcher": ["$gcc"]
+    }
+    ]
+}

@@ -24,7 +24,6 @@
 #include "aes.h"
 #include "PBKDF2.h"
 
-
 int loading = 0; // tells us whether a new file is being loaded or not 
 int changed = 0; // this will become 1 if we edit anything and don't save the file
 char filename[256] = "Nameless File";
@@ -612,7 +611,7 @@ void add_recent_files(const std::string& filepath) {
 
     save_recents_list();
 }
-
+//
 // Writes file to the address at newfile.
 void save_file(char *newfile) {
     if (textbuf->savefile(newfile))
