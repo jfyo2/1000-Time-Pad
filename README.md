@@ -1,6 +1,5 @@
 # 1000 Time Pad
 A text editor with encryption support for securing your notes. Built using FLTK and C++. 
-Name inspired by this[https://en.wikipedia.org/wiki/One-time_pad]. 
 
 Features: 
 - Encryption/decryption of text using AES-CBC supporting 128 bit, 192 bit, and 256 bit keys
@@ -15,8 +14,8 @@ TBD:
 - Modern UI 
 
 # About the encryption method
-1000 Time Pad uses AES-CBC[https://en.wikipedia.org/wiki/Advanced_Encryption_Standard] (Advanced Encryption Standard, Cipher Block Chaining mode) to encrypt the contents of the text buffer. All three key sizes (128 bit, 192 bit, 256 bit) are supported. 
-The user enters a password in plaintext, which is converted into an AES hex key of the desired key size using the PBKDF2-SHA256[https://en.wikipedia.org/wiki/PBKDF2] algorithm to hash the password using a random salt. The text is then converted into a raw stream of bits, which are used to populate a sequence of 4x4 matrices. These matrices are taken as inputs to the AES algorithm. The resulting outputs are combined using CBC (Cipher Block Chaining, see e.g. here[https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CBC]). 
+1000 Time Pad uses [AES-CBC](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard) (Advanced Encryption Standard, Cipher Block Chaining mode) to encrypt the contents of the text buffer. All three key sizes (128 bit, 192 bit, 256 bit) are supported. 
+The user enters a password in plaintext, which is converted into an AES hex key of the desired key size using the [PBKDF2-SHA256](https://en.wikipedia.org/wiki/PBKDF2) algorithm to hash the password using a random salt. The text is then converted into a raw stream of bits, which are used to populate a sequence of 4x4 matrices. These matrices are taken as inputs to the AES algorithm. The resulting outputs are combined using CBC (Cipher Block Chaining, see e.g. [here](https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CBC)). 
 
 # Building 
 This project is a C++17 FLTK application built with MinGW-w64 (g++) and FLTK installed via vcpkg. 
