@@ -1,3 +1,7 @@
+// Copyright (c) jfyo2 2026. Licensed under the MIT Licence.
+// See the LICENCE file for full licence text.
+
+
 // PBKDF2.h
 #ifndef PBKDF2_H
 #define PBKDF2_H

@@ -1,4 +1,5 @@
-// (c) jfyo2 2026
+// Copyright (c) jfyo2 2026. Licensed under the MIT Licence.
+// See the LICENCE file for full licence text.
 
 #include <fstream>  
 #include <iostream> 
@@ -19,16 +20,23 @@
 #include <FL/Fl_Menu_Bar.H> 
 #include <FL/Fl_Menu_Item.H> 
 #include <FL/Fl_File_Chooser.H> 
+#include <FL/Fl_Native_File_Chooser.H>
 #include <cerrno>
 #include <cstring>
 #include <windows.h>
 
+
 #include "aes.h"
 #include "PBKDF2.h"
+#include "theme.h"
 
 int loading = 0; // tells us whether a new file is being loaded or not 
 int changed = 0; // this will become 1 if we edit anything and don't save the file
 char filename[256] = "Nameless File";
+
+const char* DEFAULT_FILE_FILTER = 
+    "Text\t*.txt\n"
+    "C Files\t*.{cxx,h,c}";
 
 std::vector<std::string> recent_files;
 const size_t MAX_RECENT_FILES = 10;
@@ -41,6 +49,9 @@ bool cursor_visible = true; // used for blinking cursor
 bool currently_typing = false; // used for blinking cursor 
 bool now_editing = false; // similar to currently_typing but used for tracking edits instead, behaves slightly differently
 bool is_bulk_action = false; // overrides edit tracking during a sequence of actions, used in find and replace 
+
+bool word_wrap_enabled = false;
+bool line_numbers_enabled = false;
 
 char encrypt_mode[8];
 int keysize = 128; // key size in bits for encryption/decryption
@@ -85,6 +96,9 @@ std::vector<std::string> redo_history;
 
 
 /* --- Declare all handler functions --- */
+//char native_file_chooser(char* title);
+char* native_file_chooser(const char* title, const char* mode);
+
 void text_changed(int pos, int nInserted, int nDeleted, int nRestyled, const char* deletedText, void* editorWindow);
 void blink_cursor(void* data);
 
@@ -220,7 +234,7 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
     textbuf = new Fl_Text_Buffer();
     editor = new Fl_Text_Editor(0, 30, w, h - 30);
     editor->buffer(textbuf);
-    editor->textfont(FL_COURIER); // add a new font 
+    style_editor(editor); // see theme.h
 
     // set base initial state
     undo_history.push_back("");
@@ -239,20 +253,20 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
 
         { "Edit", 0, 0, 0, FL_SUBMENU },
             { "Undo", FL_CTRL + 'z', undo_edit, 0, 0 },
-            { "Redo", FL_CTRL + 'y', redo_edit, 0, FL_MENU_DIVIDER },
+            { "Redo", FL_CTRL + 'y', redo_edit, 0, 0 },
             { "Cut", FL_CTRL + 'x', cut_cb, 0, 0 },
             { "Copy", FL_CTRL + 'c', copy_cb, 0, 0 },
             { "Paste", FL_CTRL + 'v', paste_cb, 0, 0 },
             { "Delete", FL_CTRL + FL_Delete, delete_cb, 0, 0 },
-            { "Select All", FL_CTRL + 'a', select_all_cb, 0, FL_MENU_DIVIDER },
+            { "Select All", FL_CTRL + 'a', select_all_cb, 0, 0 },
             { "Find and Replace", FL_CTRL + 'f', show_findandreplace, 0, 0 },
             { 0 },
 
         { "View", 0, 0, 0, FL_SUBMENU },
             {"Zoom In", FL_CTRL + FL_SHIFT + '+', [](Fl_Widget* w, void* v) { zoom_in(v); }, 0, 0 },
-            {"Zoom Out", FL_CTRL + FL_SHIFT + '-', [](Fl_Widget* w, void* v) { zoom_out(v); }, 0, FL_MENU_DIVIDER },
-            { "Word Wrap", 0, toggle_wordwrap_cb, 0, FL_MENU_TOGGLE },
-            { "Line Numbers", 0, toggle_linenumbers_cb, 0, FL_MENU_TOGGLE },
+            {"Zoom Out", FL_CTRL + FL_SHIFT + '-', [](Fl_Widget* w, void* v) { zoom_out(v); }, 0, 0 },
+            { "Word Wrap", 0, toggle_wordwrap_cb, 0, 0 },
+            { "Line Numbers", 0, toggle_linenumbers_cb, 0, 0 },
             { 0 },
         { "Encryption", 0, 0, 0, FL_SUBMENU }, 
             {"Encrypt Text", 0, show_encrypt_window, 0, 0 },
@@ -264,6 +278,7 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
     menu = new Fl_Menu_Bar(0, 0, w, 30);
     menu->user_data(this); 
     menu->copy(menuitems, this);
+    style_menu(menu); // see theme.h
 
     redraw_recents_menu(nullptr, this);
 
@@ -294,6 +309,17 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
     replace_all->callback(replace_all_cb, this);
     replace_cancel->callback(replace_cancel_cb, this);
 
+    // add styling, see theme.h
+    style_dialog_window(replace_dlg);
+    style_input(find_text);
+    style_input(replace_with_text);
+    style_button(find_previous);
+    style_button(find_next);
+    style_button(replace_selection);
+    style_button(replace_all);
+    style_button(replace_cancel);
+    style_box(match_count_label);
+
     replace_dlg->set_non_modal();
     replace_dlg->end();
 
@@ -318,6 +344,19 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
     cancel_encrypt->callback(cancel_encrypt_cb, this);
     encrypt_explain->callback(explain_encryption, this);
 
+    // add styling, see theme.h 
+    style_dialog_window(encrypt_dlg);
+    style_input(password_input);
+    style_button(encrypt);
+    style_button(cancel_encrypt);
+    style_button(encrypt_explain);
+    // note: keybits (Fl_Choice) isn't Fl_Input_-derived, so style separately:
+    keybits->box(FL_TRULY_FLAT_BOX);
+    keybits->down_box(FL_TRULY_FLAT_BOX);
+    keybits->color(NORD2);
+    keybits->textcolor(NORD4);
+    keybits->selection_color(NORD8);
+
     encrypt_dlg->set_non_modal();
     encrypt_dlg->end();
 
@@ -330,6 +369,9 @@ EditorWindow::EditorWindow(int w, int h, const char* title)
 
 
 int main(int argc, char **argv) {
+    apply_nord_theme(); // see theme.h
+    style_message_boxes(); // see theme.h
+
     // needed for full unicode support on win
     #ifdef _WIN32
     #define WIN32_LEAN_AND_MEAN
@@ -343,7 +385,6 @@ int main(int argc, char **argv) {
     init_recents_path(argv[0]);
     read_recent_files();
 
-
     EditorWindow win(800, 600, "Nameless File - Thousand Time Pad");
     win.show(argc, argv);
     Fl::add_timeout(0.5, blink_cursor, &win);
@@ -356,6 +397,40 @@ int main(int argc, char **argv) {
 
 
 /* --- Function Implementations --- */
+
+// native file browser, preferable to fl_file_chooser
+char* native_file_chooser(const char* title, const char* mode) {
+    Fl_Native_File_Chooser fc; 
+    fc.title(title);
+    fc.filter(DEFAULT_FILE_FILTER);
+
+    // set home directory 
+    #ifdef _WIN32
+    const char* home = std::getenv("USERPROFILE");
+    #else 
+    const char* home = std::getenv("HOME");
+    #endif
+    if (home) fc.directory(home);
+
+    // set mode 
+    if (strcmp(mode, "o") == 0) 
+        fc.type(Fl_Native_File_Chooser::BROWSE_FILE);
+    else if (strcmp(mode, "s") == 0) 
+        fc.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
+    else 
+        return nullptr;
+
+
+    switch ( fc.show() ) {
+        case -1: 
+            fl_alert("Error opening file: %s", fc.errmsg()); 
+            return nullptr;                                   
+        case 1: // cancelled 
+            return nullptr;
+        default:
+                return strdup(fc.filename()); 
+    }
+}
 
 // Helper function to safely retrieve EditorWindow pointer
 static EditorWindow* get_window(Fl_Widget* w, void* data) {
@@ -800,9 +875,12 @@ void open_file_dialogue(Fl_Widget* w, void* data) {
         }
     }
 
-    char *newfile = fl_file_chooser("Open File?", "*", filename);
-    if (newfile != NULL) open_file(newfile, -1);
-
+    //char *newfile = fl_file_chooser("Open File?", "*", filename);
+    char *newfile = native_file_chooser("Open File", "o");
+    if (newfile != NULL) {
+        open_file(newfile, -1);
+        free(newfile);
+    }
     // update window label 
     std::string suffix = " - Thousand Time Pad";
     std::string title = filename + suffix;
@@ -817,12 +895,14 @@ void open_file_dialogue(Fl_Widget* w, void* data) {
 void save_file_dialogue(Fl_Widget* w, void* data) {
     if (filename[0] == '\0' || strcmp(filename, "Nameless File") == 0) {
         // No file name exists yet, act like "Save As"
-        char *newfile = fl_file_chooser("Save File As?", "*", filename);
-        if (newfile != NULL) save_file(newfile);
-
-        // update the recents menu
-        add_recent_files(newfile);
-        redraw_recents_menu(w, data);
+        char *newfile = native_file_chooser("Save As", "s");
+        if (newfile != NULL) {
+            save_file(newfile);
+            free(newfile);
+            // update the recents menu
+            add_recent_files(newfile);
+            redraw_recents_menu(w, data);
+        }
     } 
     else {
         save_file(filename);
@@ -831,11 +911,14 @@ void save_file_dialogue(Fl_Widget* w, void* data) {
 
 // we copy the save as functionality from save_file_dialogue 
 void save_as_dialogue(Fl_Widget* w, void* data) {
-    char *newfile = fl_file_chooser("Save File As?", "*", filename);
-    if (newfile != NULL) save_file(newfile);
-
-    add_recent_files(newfile);
-    redraw_recents_menu(w, data);
+    //char *newfile = fl_file_chooser("Save File As?", "*", filename);
+    char *newfile = native_file_chooser("Save As", "s");
+    if (newfile != NULL) {
+        save_file(newfile);
+        free(newfile);
+        add_recent_files(newfile);
+        redraw_recents_menu(w, data);
+    }
 }
 
 
@@ -1289,14 +1372,21 @@ void toggle_wordwrap_cb(Fl_Widget* w, void* data) {
     EditorWindow* win = get_window(w, data);
     if (!win || !win->editor) return;
 
-    // figure out if toggle is on or not 
-    const int wordwrap_status = win->menu->mvalue()->value();
+    // const int wordwrap_status = win->menu->mvalue()->value();
+    
+    word_wrap_enabled = !word_wrap_enabled;
+    Fl_Menu_Item* item = (Fl_Menu_Item*)win->menu->find_item(toggle_wordwrap_cb);
+    if (item) {
+        item->label(word_wrap_enabled ? "\u2714 Word Wrap" : "Word Wrap");
+    }
 
-    if (wordwrap_status) {
+    if (word_wrap_enabled) {
         win->editor->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
     } else {
         win->editor->wrap_mode(Fl_Text_Display::WRAP_NONE, 0);
     }
+
+
     win->editor->redraw();
 }
 
@@ -1304,13 +1394,20 @@ void toggle_linenumbers_cb(Fl_Widget* w, void* data) {
     EditorWindow* win = get_window(w, data);
     if (!win || !win->editor) return;
 
-    // same as above function 
-    const int linenumbers_status = win->menu->mvalue()->value();
-    if (linenumbers_status) {
+    // const int linenumbers_status = win->menu->mvalue()->value();
+    
+    line_numbers_enabled = !line_numbers_enabled;
+    Fl_Menu_Item* item = (Fl_Menu_Item*)win->menu->find_item(toggle_linenumbers_cb);
+    if (item) {
+        item->label(line_numbers_enabled ? "\u2714 Line Numbers" : "Line Numbers");
+    }
+
+    if (line_numbers_enabled) {
         win->editor->linenumber_width(45);
     } else {
         win->editor->linenumber_width(0);
     }
+
     win->editor->redraw();
 }
 
@@ -1458,3 +1555,5 @@ void encrypt_decrypt_text(Fl_Widget* w, void* data) {
         fl_message("An unexpected error occurred.");
     }
 }
+
+

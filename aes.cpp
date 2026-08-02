@@ -1,3 +1,6 @@
+// Copyright (c) jfyo2 2026. Licensed under the MIT Licence.
+// See the LICENCE file for full licence text.
+
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>

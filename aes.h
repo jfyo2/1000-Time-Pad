@@ -1,3 +1,7 @@
+// Copyright (c) jfyo2 2026. Licensed under the MIT Licence.
+// See the LICENCE file for full licence text.
+
+
 // aes.h
 #ifndef AES_H
 #define AES_H

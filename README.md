@@ -10,9 +10,7 @@ Features:
 - Find and replace
 - Open recent files menu
 - Toggleable word wrapping and line numbering 
-
-To be added:
-- Modern UI 
+- Nord-based dark theme 
 
 # About the encryption method
 1000 Time Pad uses [AES-CBC](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard) (Advanced Encryption Standard, Cipher Block Chaining mode) to encrypt the contents of the text buffer. All three key sizes (128 bit, 192 bit, 256 bit) are supported. 
